@@ -1,7 +1,7 @@
 
-# Mexico House Finder
+# House Finder
 
-Local Python application for searching real estate listings in Mexico and classifying potential **remate** properties using the OpenAI API.
+Local Python application for searching real estate listings and classifying potential **remate** properties using the OpenAI API.
 
 > **Current status**
 >
@@ -98,17 +98,17 @@ Required columns:
 
 | Column | Description |
 |---------|-------------|
-| operacion | compra or renta |
-| rango_min | Minimum MXN price |
-| rango_max | Maximum MXN price |
-| recamaras | Minimum bedrooms |
-| banios | Minimum bathrooms |
-| colonias | Pipe-separated neighborhoods |
+| operation | buy or rent |
+| min_range | Minimum MXN price |
+| max_range | Maximum MXN price |
+| bedroom | Minimum bedrooms |
+| baths | Minimum bathrooms |
+| colonies | Pipe-separated neighborhoods |
 
 Example:
 
 ```csv
-operacion,rango_min,rango_max,recamaras,banios,colonias
+operation,min_range,max_range,bedrooms,baths,colonies
 compra,600000,24200000,2,1,portales|narvarte|roma|campestre churubusco
 ```
 
