@@ -1,0 +1,18 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+
+# MAX_PAGES_PER_SITE = 3
+MAX_RESULTS_PER_SITE = 100
+# REQUEST_TIMEOUT_SECONDS = 20
+# DELAY_BETWEEN_REQUESTS_SECONDS = 3
+
+REQUEST_TIMEOUT_SECONDS = 8
+DELAY_BETWEEN_REQUESTS_SECONDS = 1
+MAX_PAGES_PER_SITE = 1
+
+DATABASE_URL = "sqlite:///house_finder.db"
