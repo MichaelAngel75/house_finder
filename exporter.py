@@ -4,7 +4,7 @@ import pandas as pd
 from models import Classification
 
 
-def export_classifications(items: list[Classification], output_file: str) -> None:
+def _to_dataframe(items: list[Classification]) -> pd.DataFrame:
     rows = []
 
     for item in items:
@@ -12,10 +12,8 @@ def export_classifications(items: list[Classification], output_file: str) -> Non
         row["red_flags"] = "|".join(item.red_flags)
         rows.append(row)
 
-    df = pd.DataFrame(rows)
-
-    if df.empty:
-        df = pd.DataFrame(
+    if not rows:
+        return pd.DataFrame(
             columns=[
                 "criteria_id",
                 "query",
@@ -34,4 +32,37 @@ def export_classifications(items: list[Classification], output_file: str) -> Non
             ]
         )
 
-    df.to_csv(output_file, index=False)
+    return pd.DataFrame(rows)
+
+
+def export_debug(
+    items: list[Classification],
+    filename: str,
+):
+    """
+    Export EVERYTHING.
+    Useful for debugging.
+    """
+
+    df = _to_dataframe(items)
+
+    df.to_csv(filename, index=False)
+
+
+def export_filtered(
+    items: list[Classification],
+    filename: str,
+):
+    """
+    Export only approved houses.
+    """
+
+    filtered = [
+        item
+        for item in items
+        if item.include
+    ]
+
+    df = _to_dataframe(filtered)
+
+    df.to_csv(filename, index=False)

@@ -66,18 +66,20 @@ def heuristic_classify(
             snippet=result.snippet,
             url=result.url,
             source_domain=result.source_domain,
-            is_remate=True,
-            remate_stage="possible_low_risk",
-            risk_level="low",
-            include=True,
-            confidence=0.65,
-            reason=(
-                "Candidate remate with lower-risk indicators: "
-                f"{', '.join(low_flags)}"
-            ),
+
+            price=result.price,
+            location=result.location,
+            bedrooms=result.bedrooms,
+            bathrooms=result.bathrooms,
+
+            is_remate=is_remate,
+            remate_stage="unknown",
+            risk_level="unknown",
+            include=False,
+            confidence=0.45,
+            reason="Not enough evidence for low-risk remate.",
             red_flags=[],
         )
-
     return Classification(
         criteria_id=result.criteria_id,
         query=result.query,
@@ -85,6 +87,12 @@ def heuristic_classify(
         snippet=result.snippet,
         url=result.url,
         source_domain=result.source_domain,
+
+        price=result.price,
+        location=result.location,
+        bedrooms=result.bedrooms,
+        bathrooms=result.bathrooms,
+
         is_remate=is_remate,
         remate_stage="unknown",
         risk_level="unknown",
@@ -164,7 +172,6 @@ Fetched page text:
         fallback = heuristic_classify(result, page)
         fallback.reason = "LLM did not return valid JSON. Used heuristic fallback."
         return fallback
-
     return Classification(
         criteria_id=result.criteria_id,
         query=result.query,
@@ -172,9 +179,15 @@ Fetched page text:
         snippet=result.snippet,
         url=result.url,
         source_domain=result.source_domain,
-        is_remate=bool(data.get("is_remate", False)),
-        remate_stage=data.get("remate_stage") or "unknown",
-        risk_level=data.get("risk_level") or "unknown",
+
+        price=result.price,
+        location=result.location,
+        bedrooms=result.bedrooms,
+        bathrooms=result.bathrooms,
+
+        is_remate=bool(data.get("is_remate", False)),   # is_remate,
+        remate_stage=data.get("remate_stage") or "unknown", # "unknown",
+        risk_level=data.get("risk_level") or "unknown", # "unknown",
         include=bool(data.get("include", False)),
         confidence=float(data.get("confidence", 0.0)),
         reason=data.get("reason", ""),

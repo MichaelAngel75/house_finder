@@ -22,6 +22,10 @@ class SearchResult(BaseModel):
     snippet: str = ""
     url: str
     source_domain: str
+    price: int | None = None
+    location: str | None = None
+    bedrooms: int | None = None
+    bathrooms: int | None = None    
 
 
 class PageContent(BaseModel):
@@ -30,6 +34,7 @@ class PageContent(BaseModel):
     text: str = ""
     status_code: Optional[int] = None
     fetch_error: Optional[str] = None
+    # html: str = ""
 
 
 class Classification(BaseModel):
@@ -40,6 +45,11 @@ class Classification(BaseModel):
     url: str
     source_domain: str
 
+    price: int | None = None
+    location: str | None = None
+    bedrooms: int | None = None
+    bathrooms: int | None = None
+
     is_remate: bool = False
     remate_stage: Optional[str] = None
     risk_level: str = "unknown"
@@ -48,3 +58,20 @@ class Classification(BaseModel):
     reason: str = ""
     red_flags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# class Classification(BaseModel):
+#     criteria_id: str
+#     query: str
+#     title: str
+#     snippet: str
+#     url: str
+#     source_domain: str
+
+#     is_remate: bool = False
+#     remate_stage: Optional[str] = None
+#     risk_level: str = "unknown"
+#     include: bool = False
+#     confidence: float = 0.0
+#     reason: str = ""
+#     red_flags: list[str] = Field(default_factory=list)
+#     created_at: datetime = Field(default_factory=datetime.utcnow)

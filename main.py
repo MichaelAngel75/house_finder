@@ -27,10 +27,14 @@ from database import (
 )
 from query_builder import build_queries
 from classifier import llm_classify
-from exporter import export_classifications
+from exporter import (
+    export_debug,
+    export_filtered,
+)
 from search_providers import get_search_provider
 from fetchers.requests_fetcher import RequestsFetcher
 from fetchers.playwright_fetcher import PlaywrightFetcher
+from listing_parser import enrich_search_result
 
 app = typer.Typer(add_completion=False)
 
@@ -131,6 +135,7 @@ def run(
                     if discovered_count >= MAX_URLS_PER_CRITERIA:
                         break
 
+                    result = enrich_search_result(result)
                     if result.url in seen_in_criteria:
                         continue
 
@@ -162,10 +167,38 @@ def run(
 
                 time.sleep(DELAY_BETWEEN_REQUESTS_SECONDS)
 
-        export_classifications(final_items, output_file)
+        export_filtered(
+            final_items,
+            output_file,
+        )
+
+        debug_file = output_file.replace(
+            ".csv",
+            "_debug.csv",
+        )
+
+        export_debug(
+            final_items,
+            debug_file,
+        )
         finish_run(run_id, "finished")
 
         print(f"\n[bold green]Output written:[/bold green] {output_file}")
+        approved = len(
+            [x for x in final_items if x.include]
+        )
+
+        rejected = len(final_items) - approved
+
+        print()
+
+        print(f"Approved houses : {approved}")
+        print(f"Rejected houses : {rejected}")
+
+        print()
+
+        print(f"Filtered output : {output_file}")
+        print(f"Debug output    : {debug_file}")        
 
     except Exception as exc:
         finish_run(run_id, "failed")
