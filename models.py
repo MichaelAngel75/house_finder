@@ -23,9 +23,10 @@ class SearchResult(BaseModel):
     url: str
     source_domain: str
     price: int | None = None
+    price_source: str | None = None
     location: str | None = None
     bedrooms: int | None = None
-    bathrooms: int | None = None    
+    bathrooms: int | None = None
 
 
 class PageContent(BaseModel):
@@ -46,6 +47,7 @@ class Classification(BaseModel):
     source_domain: str
 
     price: int | None = None
+    price_source: str | None = None
     location: str | None = None
     bedrooms: int | None = None
     bathrooms: int | None = None

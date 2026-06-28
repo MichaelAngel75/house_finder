@@ -65,6 +65,11 @@ def init_db() -> None:
                     snippet TEXT,
                     url TEXT UNIQUE,
                     source_domain TEXT,
+                    price INTEGER,
+                    price_source TEXT,
+                    location TEXT,
+                    bedrooms INTEGER,
+                    bathrooms INTEGER,
                     is_remate INTEGER,
                     remate_stage TEXT,
                     risk_level TEXT,
@@ -77,6 +82,36 @@ def init_db() -> None:
                 """
             )
         )
+
+        migrate_classifications_table(conn)
+
+
+def migrate_classifications_table(conn) -> None:
+    """
+    SQLite CREATE TABLE IF NOT EXISTS does not add new columns to an existing table.
+    This migration safely adds columns that were introduced after the first version.
+    """
+
+    existing_columns = {
+        row[1]
+        for row in conn.execute(text("PRAGMA table_info(classifications)")).fetchall()
+    }
+
+    required_columns = {
+        "price": "INTEGER",
+        "price_source": "TEXT",
+        "location": "TEXT",
+        "bedrooms": "INTEGER",
+        "bathrooms": "INTEGER",
+    }
+
+    for column_name, column_type in required_columns.items():
+        if column_name not in existing_columns:
+            conn.execute(
+                text(
+                    f"ALTER TABLE classifications ADD COLUMN {column_name} {column_type}"
+                )
+            )
 
 
 def create_run() -> int:
@@ -173,7 +208,14 @@ def save_candidate(result: SearchResult) -> None:
                 )
                 """
             ),
-            result.model_dump(),
+            {
+                "criteria_id": result.criteria_id,
+                "query": result.query,
+                "title": result.title,
+                "snippet": result.snippet,
+                "url": result.url,
+                "source_domain": result.source_domain,
+            },
         )
 
 
@@ -189,6 +231,11 @@ def save_classification(item: Classification) -> None:
                     snippet,
                     url,
                     source_domain,
+                    price,
+                    price_source,
+                    location,
+                    bedrooms,
+                    bathrooms,
                     is_remate,
                     remate_stage,
                     risk_level,
@@ -204,6 +251,11 @@ def save_classification(item: Classification) -> None:
                     :snippet,
                     :url,
                     :source_domain,
+                    :price,
+                    :price_source,
+                    :location,
+                    :bedrooms,
+                    :bathrooms,
                     :is_remate,
                     :remate_stage,
                     :risk_level,
@@ -215,9 +267,23 @@ def save_classification(item: Classification) -> None:
                 """
             ),
             {
-                **item.model_dump(exclude={"created_at"}),
+                "criteria_id": item.criteria_id,
+                "query": item.query,
+                "title": item.title,
+                "snippet": item.snippet,
+                "url": item.url,
+                "source_domain": item.source_domain,
+                "price": item.price,
+                "price_source": item.price_source,
+                "location": item.location,
+                "bedrooms": item.bedrooms,
+                "bathrooms": item.bathrooms,
                 "is_remate": int(item.is_remate),
+                "remate_stage": item.remate_stage,
+                "risk_level": item.risk_level,
                 "include": int(item.include),
+                "confidence": item.confidence,
+                "reason": item.reason,
                 "red_flags": "|".join(item.red_flags),
             },
         )

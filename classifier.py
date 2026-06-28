@@ -26,6 +26,55 @@ HIGH_RISK_TERMS = [
     "no visitable",
 ]
 
+def _clean_int(value) -> int | None:
+    if value is None:
+        return None
+
+    if isinstance(value, int):
+        return value
+
+    if isinstance(value, float):
+        return int(value)
+
+    if isinstance(value, str):
+        cleaned = (
+            value.replace("$", "")
+            .replace(",", "")
+            .replace("MXN", "")
+            .replace("mxn", "")
+            .replace("pesos", "")
+            .strip()
+        )
+
+        if cleaned.isdigit():
+            return int(cleaned)
+
+    return None
+
+def _base_classification_fields(result: SearchResult) -> dict:
+    return {
+        "criteria_id": result.criteria_id,
+        "query": result.query,
+        "title": result.title,
+        "snippet": result.snippet,
+        "url": result.url,
+        "source_domain": result.source_domain,
+    }
+
+# def _base_classification_fields(result: SearchResult) -> dict:
+#     return {
+#         "criteria_id": result.criteria_id,
+#         "query": result.query,
+#         "title": result.title,
+#         "snippet": result.snippet,
+#         "url": result.url,
+#         "source_domain": result.source_domain,
+#         "price": result.price,
+#         "location": result.location,
+#         "bedrooms": result.bedrooms,
+#         "bathrooms": result.bathrooms,
+#     }
+
 
 def heuristic_classify(
     result: SearchResult,
@@ -43,12 +92,7 @@ def heuristic_classify(
 
     if red_flags:
         return Classification(
-            criteria_id=result.criteria_id,
-            query=result.query,
-            title=result.title,
-            snippet=result.snippet,
-            url=result.url,
-            source_domain=result.source_domain,
+            **_base_classification_fields(result),
             is_remate=is_remate,
             remate_stage="unknown",
             risk_level="high",
@@ -60,39 +104,31 @@ def heuristic_classify(
 
     if is_remate and low_flags:
         return Classification(
-            criteria_id=result.criteria_id,
-            query=result.query,
-            title=result.title,
-            snippet=result.snippet,
-            url=result.url,
-            source_domain=result.source_domain,
-
+            **_base_classification_fields(result),
             price=result.price,
+            price_source=result.price_source,
             location=result.location,
             bedrooms=result.bedrooms,
             bathrooms=result.bathrooms,
-
-            is_remate=is_remate,
-            remate_stage="unknown",
-            risk_level="unknown",
-            include=False,
-            confidence=0.45,
-            reason="Not enough evidence for low-risk remate.",
+            is_remate=True,
+            remate_stage="possible_low_risk",
+            risk_level="low",
+            include=True,
+            confidence=0.65,
+            reason=(
+                "Candidate remate with lower-risk indicators: "
+                f"{', '.join(low_flags)}"
+            ),
             red_flags=[],
         )
-    return Classification(
-        criteria_id=result.criteria_id,
-        query=result.query,
-        title=result.title,
-        snippet=result.snippet,
-        url=result.url,
-        source_domain=result.source_domain,
 
+    return Classification(
+        **_base_classification_fields(result),
         price=result.price,
+        price_source=result.price_source,
         location=result.location,
         bedrooms=result.bedrooms,
-        bathrooms=result.bathrooms,
-
+        bathrooms=result.bathrooms,        
         is_remate=is_remate,
         remate_stage="unknown",
         risk_level="unknown",
@@ -112,10 +148,14 @@ def llm_classify(
 
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    page_text = page.text[:6000] if page and page.text else ""
+    page_text = page.text[:8000] if page and page.text else ""
 
     prompt = f"""
 You classify Mexican real estate listings for remate risk.
+
+Important:
+You can only use the information provided below. Do not invent facts.
+If price, location, bedrooms, or bathrooms are not clearly present, return null for those fields.
 
 Goal:
 Only include listings that appear to be VERY LOW or LOW risk.
@@ -136,8 +176,19 @@ Exclude when:
 - cash-only with unclear legal status
 - not enough evidence
 
+Extract these property fields if explicitly available:
+- price in MXN as integer, example 950000
+- location / neighborhood
+- bedrooms as integer
+- bathrooms as integer
+
 Return ONLY valid JSON with this schema:
 {{
+  "price": 950000,
+  "price_source": "title|snippet|page_text|not_found",
+  "location": "string or null",
+  "bedrooms": 2,
+  "bathrooms": 1,
   "is_remate": true,
   "remate_stage": "string or unknown",
   "risk_level": "very_low|low|medium|high|unknown",
@@ -147,12 +198,26 @@ Return ONLY valid JSON with this schema:
   "red_flags": ["string"]
 }}
 
+Price extraction rules:
+- Extract price only when explicitly shown in the provided text.
+- Return price as integer MXN only.
+- If the text says "$950,000", return 950000.
+- If the text says "$1.7 MDP", return 1700000.
+- If there are several prices because the URL is a listing/search page, return null and set price_source="not_found".
+- Do not infer or estimate price.
+
 Search result:
 Title: {result.title}
 Snippet: {result.snippet}
 URL: {result.url}
 Domain: {result.source_domain}
 Query: {result.query}
+
+Current extracted fields:
+Price: {result.price}
+Location: {result.location}
+Bedrooms: {result.bedrooms}
+Bathrooms: {result.bathrooms}
 
 Fetched page text:
 {page_text}
@@ -172,22 +237,28 @@ Fetched page text:
         fallback = heuristic_classify(result, page)
         fallback.reason = "LLM did not return valid JSON. Used heuristic fallback."
         return fallback
+
+    llm_price = _clean_int(data.get("price"))
+    final_price = result.price or llm_price
+    if result.price:
+        final_price_source = result.price_source or "parser"
+    elif llm_price:
+        final_price_source = data.get("price_source") or "llm"
+    else:
+        final_price_source = "not_found"
+
     return Classification(
-        criteria_id=result.criteria_id,
-        query=result.query,
-        title=result.title,
-        snippet=result.snippet,
-        url=result.url,
-        source_domain=result.source_domain,
+        **_base_classification_fields(result),
 
-        price=result.price,
-        location=result.location,
-        bedrooms=result.bedrooms,
-        bathrooms=result.bathrooms,
+        price=final_price,
+        price_source=final_price_source,
+        location=data.get("location") or result.location,
+        bedrooms=_clean_int(data.get("bedrooms")) or result.bedrooms,
+        bathrooms=_clean_int(data.get("bathrooms")) or result.bathrooms,
 
-        is_remate=bool(data.get("is_remate", False)),   # is_remate,
-        remate_stage=data.get("remate_stage") or "unknown", # "unknown",
-        risk_level=data.get("risk_level") or "unknown", # "unknown",
+        is_remate=bool(data.get("is_remate", False)),
+        remate_stage=data.get("remate_stage") or "unknown",
+        risk_level=data.get("risk_level") or "unknown",
         include=bool(data.get("include", False)),
         confidence=float(data.get("confidence", 0.0)),
         reason=data.get("reason", ""),
