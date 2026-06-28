@@ -1,25 +1,50 @@
+from __future__ import annotations
+
+import hashlib
+import time
+
 import pandas as pd
 import typer
 from rich import print
 
-from models import SearchCriteria
-from db import init_db, listing_exists, save_listing
-from filters import (
-    matches_criteria,
-    looks_like_remate_candidate,
-    has_high_risk_words,
+from config import (
+    SEARCH_PROVIDER,
+    MAX_URLS_PER_CRITERIA,
+    DELAY_BETWEEN_REQUESTS_SECONDS,
+    ENABLE_LIVE_FETCH,
+    ENABLE_PLAYWRIGHT_FALLBACK,
 )
-from llm_classifier import classify_listing
-from connectors import ALL_CONNECTORS
+from models import SearchCriteria, Classification
+from database import (
+    init_db,
+    create_run,
+    finish_run,
+    save_criteria,
+    save_candidate,
+    save_classification,
+    candidate_exists,
+    classification_exists,
+)
+from query_builder import build_queries
+from classifier import llm_classify
+from exporter import export_classifications
+from search_providers import get_search_provider
+from fetchers.requests_fetcher import RequestsFetcher
+from fetchers.playwright_fetcher import PlaywrightFetcher
 
-app = typer.Typer()
+app = typer.Typer(add_completion=False)
+
+
+def make_criteria_id(row_index: int, row: pd.Series) -> str:
+    raw = "|".join(str(value) for value in row.values)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    return f"criteria_{row_index}_{digest}"
 
 
 def load_criteria(input_file: str) -> list[SearchCriteria]:
     df = pd.read_csv(input_file)
-    criteria_list = []
 
-    required_columns = [
+    required = [
         "operacion",
         "rango_min",
         "rango_max",
@@ -28,76 +53,124 @@ def load_criteria(input_file: str) -> list[SearchCriteria]:
         "colonias",
     ]
 
-    for col in required_columns:
-        if col not in df.columns:
-            raise ValueError(f"Missing required column: {col}")
+    missing = [column for column in required if column not in df.columns]
 
-    for _, row in df.iterrows():
+    if missing:
+        raise ValueError(f"Missing required input columns: {missing}")
+
+    criteria_list: list[SearchCriteria] = []
+
+    for index, row in df.iterrows():
         colonias = [
-            c.strip()
-            for c in str(row["colonias"]).split("|")
-            if c.strip()
+            colonia.strip()
+            for colonia in str(row["colonias"]).split("|")
+            if colonia.strip()
         ]
 
-        criteria = SearchCriteria(
-            operacion=str(row["operacion"]).strip(),
-            rango_min=int(row["rango_min"]),
-            rango_max=int(row["rango_max"]),
-            recamaras=int(row["recamaras"]) if not pd.isna(row["recamaras"]) else None,
-            banios=int(row["banios"]) if not pd.isna(row["banios"]) else None,
-            colonias=colonias,
+        criteria_list.append(
+            SearchCriteria(
+                criteria_id=make_criteria_id(index, row),
+                operacion=str(row["operacion"]).strip().lower(),
+                rango_min=int(row["rango_min"]),
+                rango_max=int(row["rango_max"]),
+                recamaras=None
+                if pd.isna(row["recamaras"])
+                else int(row["recamaras"]),
+                banios=None
+                if pd.isna(row["banios"])
+                else int(row["banios"]),
+                colonias=colonias,
+            )
         )
-
-        criteria_list.append(criteria)
 
     return criteria_list
 
 
-@app.command()
+@app.callback(invoke_without_command=True)
 def run(
-    input_file: str = "input.csv",
-    output_file: str = "output.csv",
+    input_file: str = typer.Option("input.csv", help="CSV input file."),
+    output_file: str = typer.Option("output.csv", help="CSV output file."),
 ):
     init_db()
+    run_id = create_run()
+    final_items: list[Classification] = []
 
-    all_final_rows = []
-    criteria_list = load_criteria(input_file)
+    try:
+        criteria_list = load_criteria(input_file)
+        provider = get_search_provider(SEARCH_PROVIDER)
 
-    for criteria in criteria_list:
-        print(f"[bold blue]Searching criteria:[/bold blue] {criteria}")
+        requests_fetcher = RequestsFetcher()
+        playwright_fetcher = (
+            PlaywrightFetcher() if ENABLE_PLAYWRIGHT_FALLBACK else None
+        )
 
-        for connector in ALL_CONNECTORS:
-            print(f"[green]Running connector:[/green] {connector.portal_name}")
+        print(f"[bold blue]Search provider:[/bold blue] {SEARCH_PROVIDER}")
+        print(f"[bold blue]Live page fetch enabled:[/bold blue] {ENABLE_LIVE_FETCH}")
 
-            listings = connector.search(criteria)
-            print(f"Found raw listings: {len(listings)}")
+        for criteria in criteria_list:
+            print(f"\n[bold green]Criteria:[/bold green] {criteria}")
+            save_criteria(criteria)
 
-            for listing in listings:
-                if listing_exists(listing.url):
-                    continue
+            queries = build_queries(criteria)
 
-                if not matches_criteria(listing, criteria):
-                    continue
+            discovered_count = 0
+            seen_in_criteria: set[str] = set()
 
-                if has_high_risk_words(listing):
-                    continue
+            for query in queries:
+                if discovered_count >= MAX_URLS_PER_CRITERIA:
+                    break
 
-                if not looks_like_remate_candidate(listing):
-                    continue
+                print(f"[cyan]Query:[/cyan] {query}")
 
-                classified = classify_listing(listing)
+                results = provider.search(
+                    query=query,
+                    criteria_id=criteria.criteria_id,
+                )
 
-                save_listing(classified)
+                for result in results:
+                    if discovered_count >= MAX_URLS_PER_CRITERIA:
+                        break
 
-                if classified.include:
-                    all_final_rows.append(classified.model_dump())
+                    if result.url in seen_in_criteria:
+                        continue
 
-    if all_final_rows:
-        df = pd.DataFrame(all_final_rows)
-        df.to_csv(output_file, index=False)
-        print(f"[bold green]Output created:[/bold green] {output_file}")
-    else:
-        print("[yellow]No qualifying low-risk remate listings found.[/yellow]")
+                    seen_in_criteria.add(result.url)
+
+                    if not candidate_exists(result.url):
+                        save_candidate(result)
+                        print(f"  [green]Candidate:[/green] {result.url}")
+                    else:
+                        print(f"  [yellow]Cached candidate:[/yellow] {result.url}")
+
+                    if classification_exists(result.url):
+                        print(f"  [yellow]Already classified:[/yellow] {result.url}")
+                        continue
+
+                    page = None
+
+                    if ENABLE_LIVE_FETCH:
+                        page = requests_fetcher.fetch(result.url)
+
+                        if page.fetch_error and playwright_fetcher:
+                            page = playwright_fetcher.fetch(result.url)
+
+                    classified = llm_classify(result, page)
+                    save_classification(classified)
+                    final_items.append(classified)
+
+                    discovered_count += 1
+
+                time.sleep(DELAY_BETWEEN_REQUESTS_SECONDS)
+
+        export_classifications(final_items, output_file)
+        finish_run(run_id, "finished")
+
+        print(f"\n[bold green]Output written:[/bold green] {output_file}")
+
+    except Exception as exc:
+        finish_run(run_id, "failed")
+        print(f"[bold red]Run failed:[/bold red] {exc}")
+        raise
 
 
 if __name__ == "__main__":
