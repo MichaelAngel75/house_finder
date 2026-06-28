@@ -5,6 +5,8 @@ from openai import OpenAI
 
 from config import OPENAI_API_KEY, OPENAI_MODEL
 from models import SearchResult, PageContent, Classification
+from app_logger import get_logger, log_input, log_output
+logger = get_logger(__name__)
 
 LOW_RISK_TERMS = [
     "escriturado",
@@ -222,7 +224,7 @@ Bathrooms: {result.bathrooms}
 Fetched page text:
 {page_text}
 """
-
+    log_input(logger, "openai prompt", prompt)
     response = client.responses.create(
         model=OPENAI_MODEL,
         input=prompt,

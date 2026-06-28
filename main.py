@@ -35,6 +35,12 @@ from search_providers import get_search_provider
 from fetchers.requests_fetcher import RequestsFetcher
 from fetchers.playwright_fetcher import PlaywrightFetcher
 from listing_parser import enrich_search_result
+from url_tools.registry import get_resolver
+
+from app_logger import setup_logging, get_logger, log_input, log_output, log_event, log_error
+
+logger = get_logger(__name__)
+
 
 app = typer.Typer(add_completion=False)
 
@@ -95,9 +101,17 @@ def run(
     input_file: str = typer.Option("input.csv", help="CSV input file."),
     output_file: str = typer.Option("output.csv", help="CSV output file."),
 ):
+
+    setup_logging()
+
+    log_event(logger, "House finding run started")
+    log_input(logger, "input_file", input_file)
+    log_input(logger, "output_file", output_file)
+
     init_db()
     run_id = create_run()
     final_items: list[Classification] = []
+
 
     try:
         criteria_list = load_criteria(input_file)
@@ -125,11 +139,15 @@ def run(
                     break
 
                 print(f"[cyan]Query:[/cyan] {query}")
+                log_input(logger, "search query", query)
 
                 results = provider.search(
                     query=query,
                     criteria_id=criteria.criteria_id,
                 )
+
+                log_output(logger, "search results", results)                
+
 
                 for result in results:
                     if discovered_count >= MAX_URLS_PER_CRITERIA:
@@ -141,29 +159,82 @@ def run(
 
                     seen_in_criteria.add(result.url)
 
-                    if not candidate_exists(result.url):
-                        save_candidate(result)
-                        print(f"  [green]Candidate:[/green] {result.url}")
-                    else:
-                        print(f"  [yellow]Cached candidate:[/yellow] {result.url}")
-
-                    if classification_exists(result.url):
-                        print(f"  [yellow]Already classified:[/yellow] {result.url}")
-                        continue
-
                     page = None
 
                     if ENABLE_LIVE_FETCH:
+                        log_event(logger, "Fetching search result URL: %s", result.url)
                         page = requests_fetcher.fetch(result.url)
+                        log_output(logger, "search result fetch page", page)
 
                         if page.fetch_error and playwright_fetcher:
+                            log_event(logger, "Using Playwright fallback for: %s", result.url)
                             page = playwright_fetcher.fetch(result.url)
+                            log_output(logger, "playwright search result fetch page", page)
 
-                    classified = llm_classify(result, page)
-                    save_classification(classified)
-                    final_items.append(classified)
+                    html = page.html if page else None
 
-                    discovered_count += 1
+                    resolver = get_resolver(result.url)
+                    property_urls = resolver.resolve(result.url, html)
+
+                    log_output(logger, "resolved property URLs", property_urls)
+
+                    if not property_urls:
+                        print(f"  [yellow]No property URLs resolved:[/yellow] {result.url}")
+                        continue
+
+                    for property_url in property_urls:
+                        if discovered_count >= MAX_URLS_PER_CRITERIA:
+                            break
+
+                        if property_url in seen_in_criteria:
+                            continue
+
+                        log_event(logger, "property_url: ", property_url)
+                        seen_in_criteria.add(property_url)
+
+                        # TODO: validate this is good
+                        # result.url = property_url
+                        result = result.model_copy(update={"url": property_url})
+                        property_result = result.model_copy(update={"url": property_url})
+
+                        if not candidate_exists(property_url):
+                            # TODO: validate this is good
+                            # save_candidate(result)
+                            save_candidate(property_result)
+
+                            print(f"  [green]Property candidate:[/green] {property_url}")
+                        else:
+                            print(f"  [yellow]Cached property candidate:[/yellow] {property_url}")
+
+                        if classification_exists(property_url):
+                            print(f"  [yellow]Already classified:[/yellow] {property_url}")
+                            continue
+
+                        property_page = None
+
+                        if ENABLE_LIVE_FETCH:
+                            log_event(logger, "Fetching property URL: %s", property_url)
+                            property_page = requests_fetcher.fetch(property_url)
+                            log_output(logger, "property fetch page", property_page)
+
+                            if property_page.fetch_error and playwright_fetcher:
+                                log_event(logger, "Using Playwright fallback for property: %s", property_url)
+                                property_page = playwright_fetcher.fetch(property_url)
+                                log_output(logger, "playwright property fetch page", property_page)
+
+                        log_input(logger, "llm input result", result)
+                        log_input(logger, "llm input page", property_page)
+
+                        # TODO: validate this is good
+                        # classified = llm_classify(result, property_page)
+                        classified = llm_classify(property_result, property_page)
+
+                        log_output(logger, "llm classification", classified)
+
+                        save_classification(classified)
+                        final_items.append(classified)
+
+                        discovered_count += 1
 
                 time.sleep(DELAY_BETWEEN_REQUESTS_SECONDS)
 
@@ -192,8 +263,9 @@ def run(
 
     except Exception as exc:
         finish_run(run_id, "failed")
+        log_error(logger, "House finding run failed")
         print(f"[bold red]Run failed:[/bold red] {exc}")
-        raise
+        raise    
 
 
 if __name__ == "__main__":
