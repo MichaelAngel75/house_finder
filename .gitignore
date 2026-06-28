@@ -20,7 +20,6 @@ env/
 *.db-journal
 *.sqlite-journal
 
-output.csv
 output/
 data/
 logs/
@@ -41,3 +40,8 @@ dist/
 .coverage
 htmlcov/
 .ipynb_checkpoints/
+
+*.csv
+*debug.csv
+*.xlsx
+*.xls

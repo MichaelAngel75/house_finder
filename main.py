@@ -167,20 +167,10 @@ def run(
 
                 time.sleep(DELAY_BETWEEN_REQUESTS_SECONDS)
 
-        export_filtered(
-            final_items,
-            output_file,
-        )
-
-        debug_file = output_file.replace(
-            ".csv",
-            "_debug.csv",
-        )
-
-        export_debug(
-            final_items,
-            debug_file,
-        )
+        export_filtered(final_items, output_file)
+        debug_file = output_file.replace(".csv", "_debug.csv")
+        export_debug(final_items, debug_file)
+        
         finish_run(run_id, "finished")
 
         print(f"\n[bold green]Output written:[/bold green] {output_file}")
