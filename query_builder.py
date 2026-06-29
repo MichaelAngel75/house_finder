@@ -17,11 +17,13 @@ def build_queries(criteria: SearchCriteria) -> list[str]:
             # f'site:lamudi.com.mx "{colonia}" remate "{region}"',
             # f'site:mercadolibre.com.mx "{colonia}" remate bancario "{region}"',
             # f'site:vivanuncios.com.mx "{colonia}" remate bancario "{region}"',
-            f'site:propiedades.com/inmuebles/ "{colonia}" remate "{region}"',
+            #==================
+            # f'site:propiedades.com/inmuebles/ "{colonia}" remate "{region}"',
             f'site:inmuebles24.com/propiedades/clasificado/ "{colonia}" remate "{region}"',
             f'site:lamudi.com.mx/detalle/ "{colonia}" remate "{region}"',
-            f'site:mercadolibre.com.mx/MLM- "{colonia}" "remate bancario" "{region}"',
-            f'site:vivanuncios.com.mx/a- "{colonia}" "remate bancario" "{region}"',
+            # f'site:mercadolibre.com.mx/MLM- "{colonia}" "remate bancario" "{region}"',
+            # f'site:vivanuncios.com.mx/a- "{colonia}" "remate bancario" "{region}"',
+            #--------------------------
             # f'"{colonia}" "remate bancario" casa "{region}"',
             # f'"{colonia}" "casa en remate" "{region}"',
             # f'"{colonia}" "adjudicado" casa "{region}"',

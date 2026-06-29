@@ -65,6 +65,13 @@ def get_page_html(page) -> str | None:
     return None
 
 
+JS_HEAVY_DOMAINS = (
+    # "propiedades.com",
+    "inmuebles24.com",
+    "lamudi.com.mx",
+)
+
+
 def fetch_page_with_fallback(
     url: str,
     requests_fetcher: RequestsFetcher,
@@ -77,21 +84,81 @@ def fetch_page_with_fallback(
     if not ENABLE_LIVE_FETCH:
         return page, html
 
-    log_event(logger, "Fetching %s URL: %s", label, url)
+    force_playwright = any(domain in url.lower() for domain in JS_HEAVY_DOMAINS)
+
+    if force_playwright and playwright_fetcher:
+        log_event(logger, "Fetching %s URL with Playwright: %s", label, url)
+        page = playwright_fetcher.fetch(url)
+        log_output(logger, f"{label} playwright fetch page", page)
+
+        html = get_page_html(page)
+        fetch_error = getattr(page, "fetch_error", None)
+
+        if html and not fetch_error:
+            return page, html
+
+        log_event(
+            logger,
+            "Playwright failed or empty for %s URL, trying requests: %s",
+            label,
+            url,
+        )
+
+    log_event(logger, "Fetching %s URL with requests: %s", label, url)
     page = requests_fetcher.fetch(url)
     log_output(logger, f"{label} requests fetch page", page)
 
     html = get_page_html(page)
-
     fetch_error = getattr(page, "fetch_error", None)
 
-    if playwright_fetcher and (fetch_error or not html):
+    if html and not fetch_error:
+        return page, html
+
+    if playwright_fetcher and not force_playwright:
         log_event(logger, "Using Playwright fallback for %s URL: %s", label, url)
         page = playwright_fetcher.fetch(url)
-        log_output(logger, f"{label} playwright fetch page", page)
+        log_output(logger, f"{label} playwright fallback fetch page", page)
         html = get_page_html(page)
 
+        if html:
+            return page, html
+
+    log_event(
+        logger,
+        "Both fetchers failed or returned empty content for %s URL: %s",
+        label,
+        url,
+    )
+
     return page, html
+
+# def fetch_page_with_fallback(
+#     url: str,
+#     requests_fetcher: RequestsFetcher,
+#     playwright_fetcher: PlaywrightFetcher | None,
+#     label: str,
+# ):
+#     page = None
+#     html = None
+
+#     if not ENABLE_LIVE_FETCH:
+#         return page, html
+
+#     log_event(logger, "Fetching %s URL: %s", label, url)
+#     page = requests_fetcher.fetch(url)
+#     log_output(logger, f"{label} requests fetch page", page)
+
+#     html = get_page_html(page)
+
+#     fetch_error = getattr(page, "fetch_error", None)
+
+#     if playwright_fetcher and (fetch_error or not html):
+#         log_event(logger, "Using Playwright fallback for %s URL: %s", label, url)
+#         page = playwright_fetcher.fetch(url)
+#         log_output(logger, f"{label} playwright fetch page", page)
+#         html = get_page_html(page)
+
+#     return page, html
 
 def make_criteria_id(row_index: int, row: pd.Series) -> str:
     raw = "|".join(str(value) for value in row.values)

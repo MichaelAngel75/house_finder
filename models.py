@@ -32,11 +32,11 @@ class SearchResult(BaseModel):
 
 class PageContent(BaseModel):
     url: str
-    title: str = ""
-    text: str = ""
-    status_code: Optional[int] = None
-    fetch_error: Optional[str] = None
-    html: str = ""
+    title: str | None = None
+    text: str | None = None
+    html: str | None = None
+    status_code: int | None = None
+    fetch_error: str | None = None    
 
 
 class Classification(BaseModel):
