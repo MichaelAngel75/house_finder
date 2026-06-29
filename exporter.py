@@ -22,6 +22,10 @@ EXPORT_COLUMNS = [
     "remate_stage",
     "risk_level",
     "include",
+    "matches_price_range",
+    "matches_bedrooms",
+    "matches_bathrooms",
+    "matches_location",
     "confidence",
     "reason",
     "red_flags",
@@ -56,25 +60,29 @@ def _format_excel(writer: pd.ExcelWriter, sheet_name: str, df: pd.DataFrame) -> 
     worksheet.auto_filter.ref = worksheet.dimensions
 
     widths = {
-        "A": 18,  # criteria_id
-        "B": 45,  # query
-        "C": 45,  # title
-        "D": 60,  # snippet
-        "E": 70,  # url
-        "F": 25,  # source_domain
-        "G": 14,  # price
-        "H": 16,  # price_source
-        "I": 28,  # location
-        "J": 12,  # bedrooms
-        "K": 12,  # bathrooms
-        "L": 12,  # is_remate
-        "M": 24,  # remate_stage
-        "N": 16,  # risk_level
-        "O": 10,  # include
-        "P": 12,  # confidence
-        "Q": 70,  # reason
-        "R": 40,  # red_flags
-        "S": 24,  # created_at
+        "A": 18,
+        "B": 45,
+        "C": 45,
+        "D": 60,
+        "E": 70,
+        "F": 25,
+        "G": 14,
+        "H": 16,
+        "I": 28,
+        "J": 12,
+        "K": 12,
+        "L": 12,
+        "M": 24,
+        "N": 16,
+        "O": 10,
+        "P": 18,
+        "Q": 18,
+        "R": 18,
+        "S": 18,
+        "T": 12,
+        "U": 70,
+        "V": 40,
+        "W": 24,
     }
 
     for col, width in widths.items():
@@ -89,7 +97,7 @@ def _format_excel(writer: pd.ExcelWriter, sheet_name: str, df: pd.DataFrame) -> 
             cell.number_format = '$#,##0'
 
     if "confidence" in df.columns:
-        for cell in worksheet["P"][1:]:
+        for cell in worksheet["T"][1:]:
             cell.number_format = '0.00'
 
 

@@ -77,6 +77,10 @@ def init_db() -> None:
                     confidence REAL,
                     reason TEXT,
                     red_flags TEXT,
+                    matches_price_range INTEGER DEFAULT 0,
+                    matches_bedrooms INTEGER DEFAULT 0,
+                    matches_bathrooms INTEGER DEFAULT 0,
+                    matches_location INTEGER DEFAULT 0 ,                 
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -242,7 +246,11 @@ def save_classification(item: Classification) -> None:
                     include,
                     confidence,
                     reason,
-                    red_flags
+                    red_flags,
+                    matches_price_range,
+                    matches_bedrooms,
+                    matches_bathrooms,
+                    matches_location
                 )
                 VALUES (
                     :criteria_id,
@@ -262,7 +270,11 @@ def save_classification(item: Classification) -> None:
                     :include,
                     :confidence,
                     :reason,
-                    :red_flags
+                    :red_flags,
+                    :matches_price_range,
+                    :matches_bedrooms,
+                    :matches_bathrooms,
+                    :matches_location
                 )
                 """
             ),
@@ -285,5 +297,9 @@ def save_classification(item: Classification) -> None:
                 "confidence": item.confidence,
                 "reason": item.reason,
                 "red_flags": "|".join(item.red_flags),
+                "matches_price_range": int(item.matches_price_range),
+                "matches_bedrooms": int(item.matches_bedrooms),
+                "matches_bathrooms": int(item.matches_bathrooms),
+                "matches_location": int(item.matches_location),
             },
         )

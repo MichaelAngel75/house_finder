@@ -1,2 +1,2 @@
-operacion,rango_min,rango_max,recamaras,banios,colonias
-compra,600000,1700000,2,1,portales|narvarte|santa ursula|roma|campestre churubusco
+operacion,rango_min,rango_max,recamaras,banios,colonias,state
+compra,600000,1700000,2,1,portales|narvarte|santa ursula|roma|campestre churubusco,CDMX

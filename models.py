@@ -13,6 +13,7 @@ class SearchCriteria(BaseModel):
     recamaras: Optional[int] = None
     banios: Optional[int] = None
     colonias: list[str]
+    state: str
 
 
 class SearchResult(BaseModel):
@@ -35,7 +36,7 @@ class PageContent(BaseModel):
     text: str = ""
     status_code: Optional[int] = None
     fetch_error: Optional[str] = None
-    # html: str = ""
+    html: str = ""
 
 
 class Classification(BaseModel):
@@ -59,6 +60,10 @@ class Classification(BaseModel):
     confidence: float = 0.0
     reason: str = ""
     red_flags: list[str] = Field(default_factory=list)
+    matches_price_range: bool = False
+    matches_bedrooms: bool = False
+    matches_bathrooms: bool = False
+    matches_location: bool = False 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 # class Classification(BaseModel):

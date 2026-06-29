@@ -36,6 +36,7 @@ from fetchers.requests_fetcher import RequestsFetcher
 from fetchers.playwright_fetcher import PlaywrightFetcher
 from listing_parser import enrich_search_result
 from url_tools.registry import get_resolver
+from pathlib import Path
 
 from app_logger import setup_logging, get_logger, log_input, log_output, log_event, log_error
 
@@ -44,6 +45,53 @@ logger = get_logger(__name__)
 
 app = typer.Typer(add_completion=False)
 
+
+def get_page_html(page) -> str | None:
+    if page is None:
+        return None
+
+    for attr in ("html", "content", "text", "body", "raw_html"):
+        value = getattr(page, attr, None)
+        if value:
+            return value
+
+    if hasattr(page, "model_dump"):
+        data = page.model_dump()
+        for key in ("html", "content", "text", "body", "raw_html"):
+            value = data.get(key)
+            if value:
+                return value
+
+    return None
+
+
+def fetch_page_with_fallback(
+    url: str,
+    requests_fetcher: RequestsFetcher,
+    playwright_fetcher: PlaywrightFetcher | None,
+    label: str,
+):
+    page = None
+    html = None
+
+    if not ENABLE_LIVE_FETCH:
+        return page, html
+
+    log_event(logger, "Fetching %s URL: %s", label, url)
+    page = requests_fetcher.fetch(url)
+    log_output(logger, f"{label} requests fetch page", page)
+
+    html = get_page_html(page)
+
+    fetch_error = getattr(page, "fetch_error", None)
+
+    if playwright_fetcher and (fetch_error or not html):
+        log_event(logger, "Using Playwright fallback for %s URL: %s", label, url)
+        page = playwright_fetcher.fetch(url)
+        log_output(logger, f"{label} playwright fetch page", page)
+        html = get_page_html(page)
+
+    return page, html
 
 def make_criteria_id(row_index: int, row: pd.Series) -> str:
     raw = "|".join(str(value) for value in row.values)
@@ -61,6 +109,7 @@ def load_criteria(input_file: str) -> list[SearchCriteria]:
         "recamaras",
         "banios",
         "colonias",
+        "state",
     ]
 
     missing = [column for column in required if column not in df.columns]
@@ -90,6 +139,7 @@ def load_criteria(input_file: str) -> list[SearchCriteria]:
                 if pd.isna(row["banios"])
                 else int(row["banios"]),
                 colonias=colonias,
+                state=str(row["state"]).strip()
             )
         )
 
@@ -153,25 +203,31 @@ def run(
                     if discovered_count >= MAX_URLS_PER_CRITERIA:
                         break
 
+                    # # result = enrich_search_result(result)
+                    # # if result.url in seen_in_criteria:
+                    # #     continue
+
+                    # result = enrich_search_result(result)
+                    # seen_in_criteria.add(result.url)
+                    # page = None
+                    # if ENABLE_LIVE_FETCH:
+                    #     log_event(logger, "Fetching search result URL: %s", result.url)
+                    #     page = requests_fetcher.fetch(result.url)
+                    #     log_output(logger, "search result fetch page", page)
+                    #     if page.fetch_error and playwright_fetcher:
+                    #         log_event(logger, "Using Playwright fallback for: %s", result.url)
+                    #         page = playwright_fetcher.fetch(result.url)
+                    #         log_output(logger, "playwright search result fetch page", page)
+                    # html = page.html if page else None
+
                     result = enrich_search_result(result)
-                    if result.url in seen_in_criteria:
-                        continue
 
-                    seen_in_criteria.add(result.url)
-
-                    page = None
-
-                    if ENABLE_LIVE_FETCH:
-                        log_event(logger, "Fetching search result URL: %s", result.url)
-                        page = requests_fetcher.fetch(result.url)
-                        log_output(logger, "search result fetch page", page)
-
-                        if page.fetch_error and playwright_fetcher:
-                            log_event(logger, "Using Playwright fallback for: %s", result.url)
-                            page = playwright_fetcher.fetch(result.url)
-                            log_output(logger, "playwright search result fetch page", page)
-
-                    html = page.html if page else None
+                    page, html = fetch_page_with_fallback(
+                        url=result.url,
+                        requests_fetcher=requests_fetcher,
+                        playwright_fetcher=playwright_fetcher,
+                        label="search result",
+                    )
 
                     resolver = get_resolver(result.url)
                     property_urls = resolver.resolve(result.url, html)
@@ -189,12 +245,9 @@ def run(
                         if property_url in seen_in_criteria:
                             continue
 
-                        log_event(logger, "property_url: ", property_url)
+                        log_event(logger, "Resolved property URL: %s", property_url)
                         seen_in_criteria.add(property_url)
 
-                        # TODO: validate this is good
-                        # result.url = property_url
-                        result = result.model_copy(update={"url": property_url})
                         property_result = result.model_copy(update={"url": property_url})
 
                         if not candidate_exists(property_url):
@@ -210,24 +263,28 @@ def run(
                             print(f"  [yellow]Already classified:[/yellow] {property_url}")
                             continue
 
-                        property_page = None
-
-                        if ENABLE_LIVE_FETCH:
-                            log_event(logger, "Fetching property URL: %s", property_url)
-                            property_page = requests_fetcher.fetch(property_url)
-                            log_output(logger, "property fetch page", property_page)
-
-                            if property_page.fetch_error and playwright_fetcher:
-                                log_event(logger, "Using Playwright fallback for property: %s", property_url)
-                                property_page = playwright_fetcher.fetch(property_url)
-                                log_output(logger, "playwright property fetch page", property_page)
-
-                        log_input(logger, "llm input result", result)
-                        log_input(logger, "llm input page", property_page)
+                        # property_page = None
+                        # if ENABLE_LIVE_FETCH:
+                        #     log_event(logger, "Fetching property URL: %s", property_url)
+                        #     property_page = requests_fetcher.fetch(property_url)
+                        #     log_output(logger, "property fetch page", property_page)
+                        #     if property_page.fetch_error and playwright_fetcher:
+                        #         log_event(logger, "Using Playwright fallback for property: %s", property_url)
+                        #         property_page = playwright_fetcher.fetch(property_url)
+                        #         log_output(logger, "playwright property fetch page", property_page)
+                        # log_input(logger, "llm input result", property_result)
+                        # log_input(logger, "llm input page", property_page)
+                        property_page, _ = fetch_page_with_fallback(
+                                                url=property_url,
+                                                requests_fetcher=requests_fetcher,
+                                                playwright_fetcher=playwright_fetcher,
+                                                label="property",
+                                            )
 
                         # TODO: validate this is good
                         # classified = llm_classify(result, property_page)
-                        classified = llm_classify(property_result, property_page)
+                        # classified = llm_classify(property_result, property_page)
+                        classified = llm_classify(property_result, criteria, property_page)
 
                         log_output(logger, "llm classification", classified)
 
@@ -239,7 +296,9 @@ def run(
                 time.sleep(DELAY_BETWEEN_REQUESTS_SECONDS)
 
         export_filtered(final_items, output_file)
-        debug_file = output_file.replace(".csv", "_debug.csv")
+        # debug_file = output_file.replace(".csv", "_debug.csv")
+        output_path = Path(output_file)
+        debug_file = str(output_path.with_name(f"{output_path.stem}_debug{output_path.suffix}"))
         export_debug(final_items, debug_file)
         
         finish_run(run_id, "finished")
